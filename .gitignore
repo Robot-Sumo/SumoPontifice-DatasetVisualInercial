@@ -1,0 +1,8 @@
+#Ignorar metadata
+
+*.out
+*.pdf
+*.hex
+*.elf
+**/ipch
+**/build
