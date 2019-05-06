@@ -48,6 +48,7 @@ MPUManager::MPUManager()
 	m_bStop = false;
 	m_pCallback = 0;
 	m_iThreadID = 0;
+	m_bGetData = false;
 	m_usPackageLength = 0;
 	memset( &m_Data, 0, sizeof(__CaptureData_t) );
 	m_usCurAccelSensitivity = 0;
@@ -86,7 +87,7 @@ int  MPUManager::__LoadDataFromDevice( __CaptureData_t *p_pData )
 		if( 0 == dmp_read_fifo( sDataGyro, sDataAccel, lQuaternion, &p_pData->m_ulTimestamp, &sMask, &ucMore ) )
 		{
 			time2 = timestamp.getNanoSecs()/1000000.0;
-			std::cout << "time elapsed = " << time2-time1 << " ms" << std::endl;
+			//std::cout << "time elapsed = " << time2-time1 << " ms" << std::endl;
 			if( m_usDefaultFeatures&DMP_FEATURE_SEND_CAL_GYRO )
 			{
 				p_pData->m_sDataGyro[0] = (float)sDataGyro[0]/m_fCurGyroSensitivity;
@@ -135,10 +136,10 @@ int  MPUManager::__LoadAllDataFromDevice( __CaptureData_Buffer_t *p_pData ) // L
 
 
 	
-	time1 = timestamp.getNanoSecs()/1000000.0;
+	//time1 = timestamp.getNanoSecs()/1000000.0;
 	if( 0 == dmp_read_all_fifo_gyro_acc( sDataGyro, sDataAccel,  &packets_readed) )
 	{
-		
+		//std::cout << (time1)-timestamp.getNanoSecs()/1000000.0<< " ms elapsed" <<std::endl;
 		int indexGyro = 0;
 		int indexAcc = 0;
 		p_pData->packets_readed = packets_readed;
@@ -185,8 +186,9 @@ int  MPUManager::__LoadAllDataFromDevice( __CaptureData_Buffer_t *p_pData ) // L
 
 		return int(packets_readed); // retornar numero de paquetes restantes
 	}
-	time2 = timestamp.getNanoSecs()/1000000.0;
-	std::cout << "time elapsed = " << time2-time1 << " ms" << std::endl;
+	//time2 = timestamp.getNanoSecs()/1000000.0;
+	//std::cout << "time elapsed on error Buffer = " << time2-time1 << " ms" << std::endl;
+	std::cout << "Read error Buffer IMU" <<std::endl;
 
 
 	return -1; // ocurrioun error de lectura
@@ -233,12 +235,16 @@ void MPUManager::__WorkThreadPush()
 	for(;!m_bStop;)
 	{
 
-		usleep(10*1000000/m_usSampleRate);
+		//usleep(10*1000000/m_usSampleRate);
+		while(!m_bGetData){
 
+		}; // mientras no se mande a muestrear la imu
+		
 		numPackages2read = __LoadAllDataFromDevice( &_Data );
 		m_pCallback( &_Data );
 
 		std::cout << "numPackagesReaded = " << numPackages2read<< std::endl;
+		m_bGetData = false;
 
 			
 		
@@ -787,6 +793,7 @@ void MPUManager::Stop()
 	if( 0 != m_iThreadID )
 	{
 		m_bStop = true;
+		m_bGetData =true;
 		pthread_join( m_iThreadID, 0 );
 	}
 
@@ -838,6 +845,40 @@ const __CaptureData_t *MPUManager::GetData()
 
 
 	
+}
+
+const __CaptureData_Buffer_t *MPUManager::GetAllBufferData()
+{
+	__CaptureData_Buffer_t *pRet = NULL;
+
+	if( m_bRunning )
+	{
+		switch(m_iUpdateType)
+		{
+		case __UDT_PullRealTime:
+			{
+				if( __LoadAllDataFromDevice( &m_AllData ) )
+				{
+					pRet = &m_AllData;
+				}
+			}
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	return pRet;
+
+
+
+	
+}
+
+void MPUManager::SetGetBufferData()
+{
+	m_bGetData = true;
 }
 
 

@@ -8,8 +8,8 @@ add_compile_options(-std=c++11)
 project (dataset)
 find_package(Threads REQUIRED)
 
-#set(raspicam_DIR /usr/local/lib/cmake/)
-#find_package(raspicam REQUIRED)
+set(raspicam_DIR /usr/local/lib/cmake/)
+find_package(raspicam REQUIRED)
 #find_library(wiringPi_LIB wiringPi)
 #find_library(mpu6050_LIB mpu6050)
 #find_package(mpu6050 REQUIRED)
@@ -37,5 +37,11 @@ add_library(dataset_libs ${dataset_SOURCE_FILES}) # comentado hasta que se cree 
 add_executable (testV1 ${PROJECT_SOURCE_DIR}/src/test.cpp)  
 target_link_libraries (testV1 dataset_libs ${CMAKE_THREAD_LIBS_INIT} )
 
+
+add_executable (raspicam_test ${PROJECT_SOURCE_DIR}/src/raspicam_test.cpp)  
+target_link_libraries (raspicam_test dataset_libs ${CMAKE_THREAD_LIBS_INIT} ${raspicam_LIBS})
+
+add_executable (test_main ${PROJECT_SOURCE_DIR}/src/test_main.cpp)  
+target_link_libraries (test_main dataset_libs ${CMAKE_THREAD_LIBS_INIT} ${raspicam_LIBS})
 
 

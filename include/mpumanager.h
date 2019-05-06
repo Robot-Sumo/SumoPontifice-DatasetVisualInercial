@@ -167,12 +167,14 @@ private:
 	float m_fCurGyroSensitivity;
 	// use for __UDT_PullRealTime mode
 	__CaptureData_t m_Data;
+	__CaptureData_Buffer_t m_AllData;
 	// data swapper
 	__DataSwap<__CaptureData_t> m_DataSwap;
 	// update data mode type
 	__UpdateDataType m_iUpdateType;
 	bool m_bRunning;
 	bool m_bStop;
+	bool m_bGetData; // Variable para WorkThreadPush() para habilitar el muestreo de la imu
 	pthread_t m_iThreadID;
 	unsigned short m_usPackageLength;
 	void (*m_pCallback)(const __CaptureData_Buffer_t *);
@@ -218,9 +220,11 @@ public:
 
 	// stop capture, device goto sleep mode
 	void Stop();
+	void SetGetBufferData();
 
 	// pull data
 	const __CaptureData_t *GetData();
+	const __CaptureData_Buffer_t *GetAllBufferData();
 	
 };
 
