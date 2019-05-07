@@ -58,39 +58,56 @@ struct DataPacketImu
     float dataAccel_x;
     float dataAccel_y;
     float dataAccel_z;
+    int64_t timestamp; //tiempo en el que se tomo la medida
 
 };
+
+
 
 bool doTestSpeedOnly=false;
 size_t nFramesCaptured=100;
 int divisor = 1;
-
-const int sizeOfImageBuffer = 400; // 400 Imagenes
+const float GravityModule = 9.68f;
+const int sizeOfImageBuffer = 700; // 400 Imagenes
 const int sizeOfBlockImu = 10; // 10 medidas de imu por bloque
 const int sizeOfImuBuffer = 400*sizeOfBlockImu; // 400 bloques de medidas de IMU para cada
 
 DataPacketImu dataImu[sizeOfImuBuffer];		// x y z
-int64_t timestampImu[sizeOfImuBuffer]; // tiempo en que fue tomada el ultimo dato
-int indexOfImuEnd = 0;
-int indexOfImuStart = 0;
+
+int indexOfImu = 0;
+
+
+static pthread_mutex_t threadMutex_get_imu_data = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t threadMutex_image_grabbed = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t threadMutex_imu_grabbed = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t threadMutex_image_write = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t threadMutex_imu_write = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t threadMutex_cout= PTHREAD_MUTEX_INITIALIZER;
+
+static pthread_mutex_t threadMutex_indexImu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t threadMutex_indexImage = PTHREAD_MUTEX_INITIALIZER;
+
 
 bool _bStop = false;
 bool _bGetImuData = false;
 bool _bImuStarted = false;
 bool _bImageGrabbed= false;
+bool _bImuGrabbed= false;
 bool _bImageWrite= true;
+bool _bImuWrite= true;
 bool _bBottleneck= false;
 unsigned short iSampleRate = 200;
 raspicam::RaspiCam Camera;
 
 std::ofstream outputFilecsv; // archivo de salida IMU
 unsigned char *dataImage[sizeOfImageBuffer]; //  apuntador a la imagen actual
-int indexOfImageEnd = 0;
-int indexOfImageStart = 0;
+int indexOfImage= 0;
+
 
 
 Timestamp timestamp; // timestamp en nanoseconds;
 int64_t timestamp_image[sizeOfImageBuffer];
+int64_t timestamp_imu;
 int width, height, format, size;
 
 //<<< Camera functions >>>
@@ -353,91 +370,104 @@ static void * threadImu(void *arg)
 
 	const __CaptureData_Buffer_t *pData = 0;
     _bImuStarted = true;
+    _bImuGrabbed = false;
+    _bImuWrite = true;
 
-    indexOfImuStart = 0;
-    indexOfImuEnd = 0;
+    indexOfImu = 0;
+    int numImuMeasurements = 0;
+    int64_t samplePeriodNs = 1000000000/iSampleRate;
+    int numOverflows = 0;
 
 	for(;!_bStop;)
 	{
 		while(!_bGetImuData && !_bStop);
         if(!_bStop)
         {
-            _bGetImuData = false;
+            pthread_mutex_lock(&threadMutex_get_imu_data);
+            _bGetImuData = false; // bajar bandera de grab imu data 
+            pthread_mutex_unlock(&threadMutex_get_imu_data);
             if( 0 != (pData=pManager->GetAllBufferData()) )
             {
-                __OutputFile( pData );
+                
+                if(!_bImuWrite) // Si no se han escrito los datos de la imu anteriores
+                {
+                    // Existe un cuello de botella en la escritura de la sd de las medidas
+                    numOverflows++;
+                    pthread_mutex_lock(&threadMutex_indexImu);
+                    indexOfImu = indexOfImu+1;
+                    pthread_mutex_unlock(&threadMutex_indexImu);
+                    
+                    if(indexOfImu>=sizeOfImuBuffer) // buffer lleno
+                    {
+                        pthread_mutex_lock(&threadMutex_cout);
+                        cout << "Bottleneck error Imu" <<endl;
+                        pthread_mutex_unlock(&threadMutex_cout);
+                   
+                        break;
+                    }
+                    else
+                    {
+                      pthread_mutex_lock(&threadMutex_cout);
+                      cout << "index buffer Imu =" << indexOfImu<< ", imu measure = " << numImuMeasurements <<endl; 
+                      pthread_mutex_unlock(&threadMutex_cout);
+                    }
+                    
+                    
+                }
+                else
+                {
+                    pthread_mutex_lock(&threadMutex_indexImu);
+                    indexOfImu = 0; // se escribieron las medidas en disco. reiniciar buffer
+                    pthread_mutex_unlock(&threadMutex_indexImu);
+
+                }
+       
+
+                // guardar datos de IMU en Buffer
+                // tiempo en que se tomó la primera medida de la imu respecto a la imagen
+                timestamp_imu = timestamp_image[indexOfImage]-(pData->packets_readed -1)*samplePeriodNs;
+                int indexAcc, indexGyro;
+                indexAcc = 0;
+                indexGyro = 0;
+                for(int i = 0; i < pData->packets_readed; i++)
+                {
+                    numImuMeasurements++;
+                    dataImu[indexOfImu+i].dataGyro_x = pData->dataGyro[indexGyro]*M_PI/180.0; // rad/s
+                    dataImu[indexOfImu+i].dataGyro_y = pData->dataGyro[indexGyro+1]*M_PI/180.0;
+                    dataImu[indexOfImu+i].dataGyro_z = pData->dataGyro[indexGyro+2]*M_PI/180.0;
+                    dataImu[indexOfImu+i].dataAccel_x = pData->dataAccel[indexAcc]*GravityModule; // m/s2
+                    dataImu[indexOfImu+i].dataAccel_y = pData->dataAccel[indexAcc+1]*GravityModule;
+                    dataImu[indexOfImu+i].dataAccel_z = pData->dataAccel[indexAcc+2]*GravityModule;  
+                    dataImu[indexOfImu+i].timestamp = timestamp_imu+i*samplePeriodNs;
+                    
+                    indexAcc = indexAcc+3;
+                    indexGyro = indexGyro+3;
+                    
+		
+	            }
+                pthread_mutex_lock(&threadMutex_indexImu);
+                indexOfImu = indexOfImu +pData->packets_readed-1; // Nuevo indice del buffer
+                pthread_mutex_unlock(&threadMutex_indexImu);
+                
+                pthread_mutex_lock(&threadMutex_imu_grabbed);
+                _bImuGrabbed = true;             
+                pthread_mutex_unlock(&threadMutex_imu_grabbed);
+            
+                //__OutputFile( pData );
             }
         }
   
 	}
+    pthread_mutex_lock(&threadMutex_cout);
+    cout << "Numero de medidas de la imu = " << numImuMeasurements <<endl;
+    cout << "Numero de overflows de la imu = " << numOverflows <<endl;
+    pthread_mutex_unlock(&threadMutex_cout);
 
     MPUManager::GetInstance()->Stop();
-    outputFilecsv.close();
+ 
     return NULL;
 }
 
-
-static void * threadWriteDisk(void *arg)
-{
-     outputFilecsv.open("../../outputImu.csv", std::ofstream::out | std::ofstream::trunc);
-
-    double maxTime , timePos;
-    for(;!_bStop;)
-	{
-		while(!_bImageGrabbed && !_bStop);
-        if(!_bStop)
-        {
-            _bImageGrabbed = false;
-        
-            _bImageWrite = false;
-
-            if(indexOfImageStart<=indexOfImageEnd)
-            {
-                // escribir imagenes de buffer en disco
-                for(int i = indexOfImageStart; i<= indexOfImageEnd; i++) {
-                    std::stringstream fn;
-                    fn<<"/home/pi/outputImages/"<< timestamp_image[i]<<".ppm"; 
-                    if(!_bBottleneck) saveImage ( fn.str(), dataImage [i], format, width, height ,size );
-                    else break;
-                }
-                indexOfImageStart = indexOfImageEnd;
-                
-                
-            }
-            else
-            {
-                // escribir imagenes de buffer en disco
-                for(int i = indexOfImageStart; i< sizeOfImageBuffer; i++) {
-                    std::stringstream fn;
-                    fn<<"/home/pi/outputImages/"<< timestamp_image[i]<<".ppm"; 
-                    if(!_bBottleneck) saveImage ( fn.str(), dataImage [i], format, width, height ,size );
-                    else break;
-                 
-                }
-
-                for(int i = 0; i<= indexOfImageEnd; i++) {
-                    std::stringstream fn;
-                    fn<<"/home/pi/outputImages/"<< timestamp_image[i]<<".ppm"; 
-                    if(!_bBottleneck) saveImage ( fn.str(), dataImage [i], format, width, height ,size );
-                    else break;
-                }
-                indexOfImageStart = indexOfImageEnd;
-            }
-            
-            _bImageWrite = true;
-             timePos = (timestamp.getNanoSecs()-timestamp_image[indexOfImageStart])/1000000.0 ;
-            if (timePos>maxTime)
-            {
-                maxTime = timePos;
-                cout << "max Time " << maxTime<< " ms"<<endl;
-            }
-           
-        }
-  
-	}
-
-    return NULL;
-}
 static void * threadCam(void *arg)
 {
     dataImage[0] =new unsigned char[  Camera.getImageBufferSize( )];
@@ -447,7 +477,6 @@ static void * threadCam(void *arg)
     size_t i=0;
     // Obtener parametros basicos de la configuracion de la camara
   
-    int counter = 0;
     size = Camera.getImageBufferSize( );
     format = Camera.getFormat();
     width = Camera.getWidth();
@@ -457,10 +486,10 @@ static void * threadCam(void *arg)
     cout << "frame rate = " << Camera.getFrameRate()<<endl;
    
 
-    indexOfImageEnd = 0;
-    indexOfImageStart = 0;
+    indexOfImage = 0;
     _bImageGrabbed = false; 
     int numImages = 0;
+    int counter = 0;
      while(!_bImuStarted);
      timer.start();
 do{
@@ -476,44 +505,49 @@ do{
             if(!_bImageWrite) // Si no se ha escrito la imagen
             {
                 // Existe un cuello de botella en la escritura de la sd de la imagen
-                indexOfImageEnd = indexOfImageEnd+1;
-                if(indexOfImageStart<indexOfImageEnd)
+                pthread_mutex_lock(&threadMutex_indexImage);
+                indexOfImage = indexOfImage+1;
+                pthread_mutex_unlock(&threadMutex_indexImage);
+                if(indexOfImage>=sizeOfImageBuffer) // buffer lleno
                 {
-                    if((indexOfImageEnd>=sizeOfImageBuffer) && (indexOfImageStart == 0)) // buffer lleno
-                    {
-                        cout << "Bottleneck error" <<endl;
-                        _bBottleneck = true;
-                        break;
-                    }
-                    if((indexOfImageEnd>=sizeOfImageBuffer) && (indexOfImageStart != 0))
-                    {
-                        indexOfImageEnd = 0; // reiniciar buffer circular
-                        cout << "here we are" <<endl;
-                    }
+                    pthread_mutex_lock(&threadMutex_cout);
+                    cout << "Bottleneck error" <<endl;
+                    pthread_mutex_unlock(&threadMutex_cout);
+                    _bBottleneck = true;
+                    break;
                 }
                 else
-                {
-                     if(indexOfImageEnd == indexOfImageStart ) // buffer lleno
-                    {
-                        cout << "Bottleneck error" <<endl;
-                        _bBottleneck = true;
-                        break;
-                    }
+                {   
+                    pthread_mutex_lock(&threadMutex_cout);
+                    cout << " Image Buffer End =" << indexOfImage<< ", image = " << numImages <<endl;
+                    pthread_mutex_unlock(&threadMutex_cout);
+                    dataImage[indexOfImage] =new unsigned char[  Camera.getImageBufferSize( )];
+                
                 }
                 
-               
-            
-              
-                cout << "Start ="<< indexOfImageStart << ", End =" << indexOfImageEnd<< ", image = " << numImages <<endl;
-                dataImage[indexOfImageEnd] =new unsigned char[  Camera.getImageBufferSize( )];
-                
-                
             }
-            timestamp_image[indexOfImageEnd] = timestamp.getNanoSecs();
+            else
+            {
+                pthread_mutex_lock(&threadMutex_indexImage);
+                indexOfImage= 0; // se escribieron las imagenes en disco. reiniciar buffer
+                pthread_mutex_unlock(&threadMutex_indexImage);
+            }
+
+            
+            pthread_mutex_lock(&threadMutex_indexImage);
+            timestamp_image[indexOfImage] = timestamp.getNanoSecs();
+            Camera.retrieve ( dataImage[indexOfImage] );
+            pthread_mutex_unlock(&threadMutex_indexImage);
+
+            pthread_mutex_lock(&threadMutex_get_imu_data);
             _bGetImuData = true; // get data del buffer de la imu en otro thread
-            Camera.retrieve ( dataImage[indexOfImageEnd] );
-            _bImageGrabbed = true;             
-            counter = 0;
+            pthread_mutex_unlock(&threadMutex_get_imu_data);
+           
+            pthread_mutex_lock(&threadMutex_image_grabbed);
+            _bImageGrabbed = true;   
+            pthread_mutex_unlock(&threadMutex_image_grabbed);
+            counter = 0;          
+         
         }
 
        
@@ -528,6 +562,163 @@ do{
     _bStop = true; // detener hilo de IMU
     return NULL;
 }
+
+static void * threadWriteDiskImage(void *arg)
+{
+  
+
+    double maxTime , timePos;
+    for(;!_bStop;)
+	{
+		while(!_bImageGrabbed && !_bStop); // Si se obtiene una imagen o datos de la imu sale
+        int64_t timestampHere = timestamp.getNanoSecs();
+        if(!_bStop)
+        {
+
+            if (_bImageGrabbed) // escribir imagenes en disco
+            {
+                 pthread_mutex_lock(&threadMutex_image_grabbed);
+                 _bImageGrabbed = false;
+                 pthread_mutex_unlock(&threadMutex_image_grabbed);
+
+                 pthread_mutex_lock(&threadMutex_image_write);
+                 _bImageWrite = false; // aun no se han escrito las imagenes
+                 pthread_mutex_unlock(&threadMutex_image_write);
+                
+                pthread_mutex_lock(&threadMutex_indexImage);
+                int index = indexOfImage;
+                pthread_mutex_unlock(&threadMutex_indexImage);
+                
+                for(int i = 0; i<= index; i++) {
+                    std::stringstream fn;
+                    fn<<"/home/pi/outputImages/"<< timestamp_image[i]<<".ppm"; 
+                    if(!_bBottleneck) saveImage ( fn.str(), dataImage [i], format, width, height ,size );
+                    else break;
+                    pthread_mutex_lock(&threadMutex_indexImage);
+                    index = indexOfImage;
+                    pthread_mutex_unlock(&threadMutex_indexImage);
+
+                }
+
+                pthread_mutex_lock(&threadMutex_image_grabbed);
+                 _bImageGrabbed = false;
+                 pthread_mutex_unlock(&threadMutex_image_grabbed);
+
+                 pthread_mutex_lock(&threadMutex_image_write);
+                 _bImageWrite = true; // se escribieron las imagenes en disco
+                 pthread_mutex_unlock(&threadMutex_image_write);
+               
+
+            }
+        
+           
+
+
+        
+
+            
+
+             timePos = (timestamp.getNanoSecs()-timestampHere)/1000000.0 ;
+            if (timePos>maxTime)
+            {
+                maxTime = timePos;
+                pthread_mutex_lock(&threadMutex_cout);
+                cout << "max Time Write Image " << maxTime<< " ms"<<endl;
+                pthread_mutex_unlock(&threadMutex_cout);
+            }
+           
+        }
+  
+	}
+
+ 
+
+    return NULL;
+}
+
+
+static void * threadWriteDiskImu(void *arg)
+{
+     outputFilecsv.open("../../outputImu.csv", std::ofstream::out | std::ofstream::trunc);
+
+    double maxTime , timePos;
+    int numImuWritten= 0;
+    for(;!_bStop;)
+	{
+		while(!_bStop && !_bImuGrabbed); // Si se obtiene una imagen o datos de la imu sale
+        int64_t timestampHere = timestamp.getNanoSecs();
+        
+        if(!_bStop)
+        {
+
+            if (_bImuGrabbed) // escribir medidas de imu en disco
+            {
+                 pthread_mutex_lock(&threadMutex_imu_grabbed);
+                 _bImuGrabbed = false;
+                 pthread_mutex_unlock(&threadMutex_imu_grabbed);
+                 
+                 pthread_mutex_lock(&threadMutex_imu_write);
+                 _bImuWrite = false; // aun no se han escrito las imagenes
+                 pthread_mutex_unlock(&threadMutex_imu_write);
+
+
+                pthread_mutex_lock(&threadMutex_indexImu);
+                int index = indexOfImu;
+                pthread_mutex_unlock(&threadMutex_indexImu);
+                for(int i = 0; i<= index; i++) {
+                    
+                    if(!_bBottleneck)
+                    {
+                        numImuWritten++;
+                        outputFilecsv <<  dataImu[i].timestamp << "," // indice de tiempo
+                        << dataImu[i].dataGyro_x <<  "," 
+                        << dataImu[i].dataGyro_y <<"," // rad/s
+                        << dataImu[i].dataGyro_z <<","
+                        << dataImu[i].dataAccel_x<<","
+                        << dataImu[i].dataAccel_y<<"," // m/s2
+                        << dataImu[i].dataAccel_z
+                        <<std::endl;
+                    }
+                    else break;
+                    pthread_mutex_lock(&threadMutex_indexImu);
+                    index = indexOfImu;
+                    pthread_mutex_unlock(&threadMutex_indexImu);
+                }
+                pthread_mutex_lock(&threadMutex_imu_grabbed);
+                 _bImuGrabbed = false;
+                 pthread_mutex_unlock(&threadMutex_imu_grabbed);
+
+                          
+                pthread_mutex_lock(&threadMutex_imu_write);
+                _bImuWrite = true; // se escribieron las medidas de la imu en disco
+                pthread_mutex_unlock(&threadMutex_imu_write);
+
+
+            }
+
+            
+
+             timePos = (timestamp.getNanoSecs()-timestampHere)/1000000.0 ;
+            if (timePos>maxTime)
+            {
+                maxTime = timePos;
+                pthread_mutex_lock(&threadMutex_cout);
+                cout << "max Time write Imu " << maxTime<< " ms"<<endl;
+                pthread_mutex_unlock(&threadMutex_cout);
+            }
+           
+        }
+  
+	}
+    
+    pthread_mutex_lock(&threadMutex_cout);
+    cout << "Imu written =" << numImuWritten<< " ms"<<endl;
+    pthread_mutex_unlock(&threadMutex_cout);
+    outputFilecsv.close();
+
+    return NULL;
+}
+
 
 int main ( int argc,char **argv ) {
     if ( argc==1 ) {
@@ -563,14 +754,17 @@ int main ( int argc,char **argv ) {
     pthread_t h1; // Hilo de la camara
     pthread_t h2; // Hilo de la imu
     pthread_t h3; // Hilo de escritura en disco de las imagenes capturadas
+    pthread_t h4; // Hilo de escritura en disco de las medidas de la imu capturadas
     usleep(2000000); // Esperar dos segundos por el balance de blancos de la camara
 
     pthread_create(&h1, NULL, threadCam, NULL);
     pthread_create(&h2, NULL, threadImu, NULL);
-    pthread_create(&h3, NULL, threadWriteDisk, NULL);
+    pthread_create(&h3, NULL, threadWriteDiskImage, NULL);
+    pthread_create(&h4, NULL, threadWriteDiskImu, NULL);
     pthread_join(h1, NULL);
     pthread_join(h2, NULL);
     pthread_join(h3, NULL);
+    pthread_join(h4, NULL);
 
 
     
