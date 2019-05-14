@@ -11,6 +11,18 @@
 
 using namespace std::chrono;
 
+struct DataPacketImu
+{
+    float dataGyro_x;
+    float dataGyro_y;
+    float dataGyro_z;
+    float dataAccel_x;
+    float dataAccel_y;
+    float dataAccel_z;
+    int64_t timestamp; //tiempo en el que se tomo la medida
+
+};
+
 struct __CaptureData_t 
 {
 	float m_sDataGyro[3];		// x y z
