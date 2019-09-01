@@ -250,6 +250,7 @@ void Driver::decodeJoystickButton(JoystickEvent event)
                             {
                                 startArduinoSampling = true;
                                 setCommandEncoderSampling(); // empezar muestreo en arduino
+                                time_stamp2 = timestamp.getNanoSecs();                 
                                 ualarm(500000, 500000); // colocar alarma periodica (10 medidas de arduino)
                             }
                             else // fuente externa
@@ -740,11 +741,11 @@ void Driver::sendCommandGetBufferData()
     char write_buffer[] = {address, command, lastchar };  
     write(serialPort ,write_buffer,sizeof(write_buffer));
 
-    usleep(10000);
+    usleep(30000);
 
     sizeDataPackage = read (serialPort, bufferData, sizeof bufferData);  // read up to 100 characters if ready to read
     
-    cout << "Size package recieved = " << sizeDataPackage <<endl;
+    cout << "measurements recieved = " << sizeDataPackage/4 <<endl;
 
     if(!externalSourceSampling)
     {
@@ -802,7 +803,7 @@ void Driver::alarmWakeup(int sig_num)
             goToGetBufferData = true;
 
         }
-        time_stamp2 = time_stamp1;
+        //time_stamp2 = time_stamp1;
         
         
     }

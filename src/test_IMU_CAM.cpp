@@ -85,7 +85,7 @@ bool _bImuGrabbed= false;
 bool _bImageWrite= true;
 bool _bImuWrite= true;
 bool _bBottleneck= false;
-unsigned short iSampleRate = 200;
+unsigned short iSampleRate = 100;
 raspicam::RaspiCam Camera;
 
 std::ofstream outputFilecsv; // archivo de salida IMU
@@ -659,6 +659,45 @@ static void * threadWriteDisk(void *arg)
                
 
             }
+
+	         if (_bImuGrabbed) // escribir medidas de imu en disco
+            {
+                
+
+                pthread_mutex_lock(&threadMutex_indexImu);
+                int index = indexOfImu;
+                pthread_mutex_unlock(&threadMutex_indexImu);
+                for(int i = 0; i<= index; i++) {
+                    
+                    if(!_bBottleneck)
+                    {
+                        numImuWritten++;
+                        outputFilecsv <<  dataImu[i].timestamp << "," // indice de tiempo
+                        << dataImu[i].dataGyro_x <<  "," 
+                        << dataImu[i].dataGyro_y <<"," // rad/s
+                        << dataImu[i].dataGyro_z <<","
+                        << dataImu[i].dataAccel_x<<","
+                        << dataImu[i].dataAccel_y<<"," // m/s2
+                        << dataImu[i].dataAccel_z
+                        <<std::endl;
+                    }
+                    else break;
+                    pthread_mutex_lock(&threadMutex_indexImu);
+                    index = indexOfImu;
+                    pthread_mutex_unlock(&threadMutex_indexImu);
+                }
+                pthread_mutex_lock(&threadMutex_imu_grabbed);
+                 _bImuGrabbed = false;
+                 pthread_mutex_unlock(&threadMutex_imu_grabbed);
+
+                          
+                pthread_mutex_lock(&threadMutex_imu_write);
+                _bImuWrite = true; // se escribieron las medidas de la imu en disco
+                pthread_mutex_unlock(&threadMutex_imu_write);
+
+
+            }
+
     
         
 
