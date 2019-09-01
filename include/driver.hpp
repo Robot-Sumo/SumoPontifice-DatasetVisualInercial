@@ -196,17 +196,14 @@ class Driver
         // Variables actuales
         int samplingRate;
 
-        int pwmForward;
-        int pwmRight;
-        int pwmLeft;
-        int pwmModule;
-        int yaw;
-        int roll;
+        int driverDir; // dirección, forward, backward, stop (0, 1, 2)
+        int driverBearing; // orientacion, de 0 a 255
+        int driverVel; // = Acc, donde Acc viene del boton del mando, de 0 a 255
 
-        int lastPwmForward;
-        int lastPwmRight;
-        int lastPwmLeft;
-        int lastPwmModule;
+        int lastDriverDir;
+        int lastDriverBearing;
+        int lastDriverVel;
+        
         int lastYaw;
         int lastRoll;
 

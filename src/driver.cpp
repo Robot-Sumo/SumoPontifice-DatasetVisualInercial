@@ -136,9 +136,9 @@ void Driver::reset()
     
 
 
-    pwmForward = 1;
-    pwmRight = 0;
-    pwmLeft = 0;
+    driverDir = 0;
+    driverBearing = 127;
+    driverVel = 0;
     yaw = yaw_90;
     roll = roll_0;
 
@@ -358,23 +358,23 @@ void Driver::run()
     
 
 
-    if(lastPwmForward != pwmForward ||  lastPwmRight != pwmRight|| 
-    lastPwmLeft != pwmLeft ||
+    if(lastDriverDir != driverDir ||  lastDriverBearing != driverBearing|| 
+    lastDriverVel != driverVel ||
     lastYaw != yaw ||
     lastRoll != roll )
     {
-        cout << "direction = " <<(pwmForward == 1? "forward" : "reverse")
-        << " pwmRight = " << pwmRight
-        << " pwmLeft = " << pwmLeft
+        cout << "direction = " <<(driverDir == 1? "forward" : "reverse")
+        << " vel = " << driverVel
+        << " bearing = " << driverBearing
         << " yaw = " << yaw
         << " roll = " << roll
         <<endl;
     }
   
 
-    lastPwmForward = pwmForward;
-    lastPwmRight = pwmRight;
-    lastPwmLeft = pwmLeft;
+    lastDriverBearing = driverBearing;
+    lastDriverVel = driverVel;
+    lastDriverDir = driverDir;
     lastYaw = yaw;
     lastRoll = roll;
   
@@ -427,21 +427,11 @@ void Driver::stateMachine()
 
         case robotStates::forward:
 
-            pwmForward = 1;
-            pwmModule = remap(-32767, 32767, 0, 255, robotButton.acceleration);
+            driverDir = 1;
 
-            if (robotButton.direction >=0) //Cruzar a la derecha, Reducir pwm rueda derecha
-            {
-                pwmRight = remap2(pwmModule, robotButton.direction);
-                pwmLeft = pwmModule;
-                
-            }
-            else // Cruzar a la izquierda, Reducir pwm rueda izquierdelsea
-            {    
-                pwmLeft = remap2(pwmModule, robotButton.direction);
-                pwmRight = pwmModule;
-                
-            }
+            driverVel = remap(-32767, 32767, 0, 255, robotButton.acceleration);
+            driverBearing = remap(-32767, 32767, 0, 255, robotButton.direction);
+            
             setCommandPWM();
 
             // Pantilt
@@ -460,22 +450,11 @@ void Driver::stateMachine()
 
             break;
         case robotStates::reverse:
-            pwmForward = 0;
+            driverDir = 1;
 
-            pwmModule = remap(-32767, 32767, 0, 255, robotButton.acceleration);
-
-            if (robotButton.direction >=0) //Cruzar a la derecha, Reducir pwm rueda derecha
-            {
-                pwmRight = remap2(pwmModule, robotButton.direction);
-                pwmLeft = pwmModule;
-                
-            }
-            else // Cruzar a la izquierda, Reducir pwm rueda izquierdelsea
-            {    
-                pwmLeft = remap2(pwmModule, robotButton.direction);
-                pwmRight = pwmModule;
-                
-            }
+            driverVel = remap(-32767, 32767, 0, 255, robotButton.acceleration);
+            driverBearing = remap(-32767, 32767, 0, 255, robotButton.direction);
+            
             setCommandPWM();
 
             // Pantilt
@@ -495,10 +474,11 @@ void Driver::stateMachine()
             //cout << "reverse" << endl;
             break;
         case robotStates::stop:
-            pwmForward = 1;
-            pwmModule = 0;
-            pwmLeft = 0;
-            pwmRight = 0;
+            driverDir = 1;
+
+            driverVel = 0;
+            driverBearing = 0;
+            
             setCommandPWM();
             if(goToGetBufferData) 
             {
@@ -669,12 +649,13 @@ void Driver::setCommandPWM()
     char address = robotDeviceAddress;
     char command = setBearingVector; // set pwm
     char lastchar = '\n';
-    char write_buffer[] = {address, command, char(pwmLeft), char(pwmRight), char(pwmForward), lastchar };  
-    if(lastPwmForward != pwmForward ||  lastPwmRight != pwmRight|| 
-    lastPwmLeft != pwmLeft )
+    char write_buffer[] = {address, command, char(driverBearing), char(driverVel), char(driverDir), lastchar };  
+    if(lastDriverDir != driverDir ||  lastDriverBearing != driverBearing|| 
+    lastDriverVel != driverVel )
     {
-        if(pwmRight>=0 && pwmRight <=255 && pwmLeft>=0 && pwmLeft<=255)
+        if(driverVel>=0 && driverVel <=255 && driverBearing>=0 && driverBearing<=255)
         {
+
             write(serialPort ,write_buffer,sizeof(write_buffer));
 
         }
