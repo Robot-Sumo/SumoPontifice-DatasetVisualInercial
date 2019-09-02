@@ -807,7 +807,7 @@ void Driver::dataPackage2FilePlusPWM()
         << pwmLeft << ","
         << pwmRight 
         <<endl;
-        j = j+4;
+        j = j+6;
 
 
     }
