@@ -741,11 +741,11 @@ void Driver::sendCommandGetBufferData()
     char write_buffer[] = {address, command, lastchar };  
     write(serialPort ,write_buffer,sizeof(write_buffer));
 
-    usleep(40000);// 30ms
+    usleep(60000);// 30ms
 
     sizeDataPackage = read (serialPort, bufferData, sizeof bufferData);  // read up to 100 characters if ready to read
     
-    cout << "measurements recieved = " << sizeDataPackage/4 <<endl;
+    cout << "measurements recieved = " << sizeDataPackage/6 <<endl;
 
     if(!externalSourceSampling)
     {
