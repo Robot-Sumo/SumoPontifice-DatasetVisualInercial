@@ -741,7 +741,7 @@ void Driver::sendCommandGetBufferData()
     char write_buffer[] = {address, command, lastchar };  
     write(serialPort ,write_buffer,sizeof(write_buffer));
 
-    usleep(30000);
+    usleep(40000);// 30ms
 
     sizeDataPackage = read (serialPort, bufferData, sizeof bufferData);  // read up to 100 characters if ready to read
     
@@ -778,6 +778,34 @@ void Driver::dataPackage2File()
         outputFilecsv <<  currentTimeSeconds<<  ","  // indice de tiempo en segundos
         << dataEncoderLeft <<"," // Data del encoder de la rueda izquierda
         << dataEncoderRight     // Data del encoder de la rueda derecha
+        <<endl;
+        j = j+4;
+
+
+    }
+   
+}
+
+
+void Driver::dataPackage2FilePlusPWM()
+{
+
+    int j;
+    int pwmLeft, pwmRight;
+    j= 0;
+    for(int i = 0; i< sizeDataPackage/6; i++) 
+    {
+
+        currentTimeSeconds = currentTimeSeconds+0.05;
+        dataEncoderLeft = bufferData[j+1]+(bufferData[j]<<8);
+        dataEncoderRight = bufferData[j+3]+(bufferData[j+2]<<8);
+        pwmLeft = bufferData[j+4];
+        pwmRight = bufferData[j+5];
+        outputFilecsv <<  currentTimeSeconds<<  ","  // indice de tiempo en segundos
+        << dataEncoderLeft <<"," // Data del encoder de la rueda izquierda
+        << dataEncoderRight<<","    // Data del encoder de la rueda derecha
+        << pwmLeft << ","
+        << pwmRight 
         <<endl;
         j = j+4;
 
