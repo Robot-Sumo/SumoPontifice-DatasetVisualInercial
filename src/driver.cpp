@@ -749,7 +749,7 @@ void Driver::sendCommandGetBufferData()
 
     if(!externalSourceSampling)
     {
-        dataPackage2File();
+        dataPackage2FilePlusPWM();
     }
 
     

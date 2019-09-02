@@ -185,6 +185,7 @@ class Driver
         void activateSampling();
         void reset();
         void dataPackage2File();
+        void dataPackage2FilePlusPWM();
 
         static void alarmWakeup(int sig_num);
         
