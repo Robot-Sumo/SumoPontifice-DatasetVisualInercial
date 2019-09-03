@@ -207,6 +207,9 @@ class Driver
         int lastYaw;
         int lastRoll;
 
+        int yaw;
+        int roll;
+
 
         // Calibracion pantilt
         const uint8_t yaw_180 =228;
