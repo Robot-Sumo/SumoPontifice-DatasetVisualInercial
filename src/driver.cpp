@@ -251,7 +251,7 @@ void Driver::decodeJoystickButton(JoystickEvent event)
                                 startArduinoSampling = true;
                                 setCommandEncoderSampling(); // empezar muestreo en arduino
                                 time_stamp2 = timestamp.getNanoSecs();                 
-                                ualarm(500000, 500000); // colocar alarma periodica (10 medidas de arduino)
+                                ualarm(800000, 800000); // colocar alarma periodica (10 medidas de arduino)
                             }
                             else // fuente externa
                             {
