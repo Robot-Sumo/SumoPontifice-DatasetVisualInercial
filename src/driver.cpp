@@ -251,7 +251,7 @@ void Driver::decodeJoystickButton(JoystickEvent event)
                                 startArduinoSampling = true;
                                 setCommandEncoderSampling(); // empezar muestreo en arduino
                                 time_stamp2 = timestamp.getNanoSecs();                 
-                                ualarm(500000, 500000); // colocar alarma periodica (10 medidas de arduino)
+                                ualarm(800000, 800000); // colocar alarma periodica (10 medidas de arduino)
                             }
                             else // fuente externa
                             {
@@ -427,7 +427,7 @@ void Driver::stateMachine()
 
         case robotStates::forward:
 
-            driverDir = 1;
+            driverDir = 0;
 
             driverVel = remap(-32767, 32767, 0, 255, robotButton.acceleration);
             driverBearing = remap(-32767, 32767, 0, 255, robotButton.direction);
@@ -474,7 +474,7 @@ void Driver::stateMachine()
             //cout << "reverse" << endl;
             break;
         case robotStates::stop:
-            driverDir = 1;
+            driverDir = 2;
 
             driverVel = 0;
             driverBearing = 0;
