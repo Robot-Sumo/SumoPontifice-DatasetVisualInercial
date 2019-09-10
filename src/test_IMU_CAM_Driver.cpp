@@ -65,9 +65,12 @@ int divisor = 1;
 const float GravityModule = 9.68f;
 const int sizeOfImageBuffer = 700; // 400 Imagenes
 const int sizeOfBlockImu = 10; // 10 medidas de imu por bloque
-const int sizeOfImuBuffer = 400*sizeOfBlockImu; // 400 bloques de medidas de IMU para cada
+const int sizeOfImuBuffer = 400*sizeOfBlockImu; // 400 bloques de medidas de IMU máximo
+const int sizeOfBlockEncoder = 2; // 2 medidas de encoder (rueda izquierda y derecha) por  bloque
+const int sizeOfEncoderBuffer = 400*sizeOfBlockImu; // 400 bloques de medidas de encoders máximo
 
 DataPacketImu dataImu[sizeOfImuBuffer];		// x y z
+
 
 int indexOfImu = 0;
 
@@ -565,7 +568,7 @@ static void * threadCam(void *arg)
             {
                 // Si no se ha activado de la escritura de datos
                 // mantenerse leyendo el buffer de la imu
-                 pthread_mutex_lock(&threadMutex_get_imu_data);
+                pthread_mutex_lock(&threadMutex_get_imu_data);
                 _bGetImuData = true; // get data del buffer de la imu en otro thread
                 pthread_mutex_unlock(&threadMutex_get_imu_data);
             }
@@ -742,12 +745,12 @@ static void * threadDriver(void *arg)
         driver.openJoystickDev("/dev/input/js0");
     }
     usleep(1500); // esperar un segundo
-    driver.openSerialDev("/dev/ttyUSB0", 57600);
+    driver.openSerialDev("/dev/ttyUSB0", 38400);
     while (!driver.serialFound & !_bStopDriver)
     {
         printf("open serial port failed.\n");
         usleep(10000000); // esperar un segundo
-        driver.openSerialDev("/dev/ttyUSB0", 57600);
+        driver.openSerialDev("/dev/ttyUSB0", 38400);
     }
 
     driver.openOutputFile("/home/pi/");

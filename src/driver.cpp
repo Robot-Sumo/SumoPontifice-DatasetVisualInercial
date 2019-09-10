@@ -249,9 +249,9 @@ void Driver::decodeJoystickButton(JoystickEvent event)
                              if(!externalSourceSampling) // si la fuente de muestreo es interna
                             {
                                 startArduinoSampling = true;
-                                setCommandEncoderSampling(); // empezar muestreo en arduino
+                                //setCommandEncoderSampling(); // empezar muestreo en arduino
                                 time_stamp2 = timestamp.getNanoSecs();                 
-                                ualarm(800000, 800000); // colocar alarma periodica (10 medidas de arduino)
+                                ualarm(500000, 500000); // colocar alarma periodica (10 medidas de arduino)
                             }
                             else // fuente externa
                             {
@@ -363,7 +363,7 @@ void Driver::run()
     lastYaw != yaw ||
     lastRoll != roll )
     {
-        cout << "direction = " <<(driverDir == 1? "forward" : "reverse")
+        cout << "direction = " << driverDir 
         << " vel = " << driverVel
         << " bearing = " << driverBearing
         << " yaw = " << yaw
@@ -474,7 +474,7 @@ void Driver::stateMachine()
             //cout << "reverse" << endl;
             break;
         case robotStates::stop:
-            driverDir = 2;
+            driverDir = 10;
 
             driverVel = 0;
             driverBearing = 0;

@@ -31,12 +31,12 @@ int main(int argc, char** argv)
         driver.openJoystickDev("/dev/input/js0");
     }
     usleep(1500); // esperar un segundo
-    driver.openSerialDev("/dev/ttyUSB0", 57600);
+    driver.openSerialDev("/dev/ttyUSB0", 38400);
     while (!driver.serialFound)
     {
         printf("open serial port failed.\n");
         usleep(10000000); // esperar un segundo
-        driver.openSerialDev("/dev/ttyUSB0", 57600);
+        driver.openSerialDev("/dev/ttyUSB0", 38400);
     }
 
     driver.openOutputFile("/home/pi/");
