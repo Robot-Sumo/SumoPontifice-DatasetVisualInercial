@@ -71,6 +71,7 @@ const int sizeOfEncoderBuffer = 400*sizeOfBlockImu; // 400 bloques de medidas de
 
 DataPacketImu dataImu[sizeOfImuBuffer];		// x y z
 
+int data
 
 int indexOfImu = 0;
 
