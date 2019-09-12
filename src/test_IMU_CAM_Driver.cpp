@@ -132,6 +132,9 @@ Timestamp timestamp; // timestamp en nanoseconds;
 int64_t timestamp_image[sizeOfImageBuffer];
 int64_t timestamp_imu;
 int64_t timestamp_Encoder;
+
+int64_t timestamp_EncoderTemp;
+
 int width, height, format, size;
 
 //<<< Camera functions >>>
@@ -498,18 +501,21 @@ static void * threadCam(void *arg)
     _bImageGrabbed = false; 
     int numImages = 0;
     int counter = 0;
-    int counterEncoder = 0;
+    int counterEncoder = 0; // contador que debe contar 10 medidas de imagenes para pedir medidas de encoder
+    bool initEncoder = true;
 
 
     
-    usleep(2000000); // Esperar dos segundos por el balance de blancos de la camara y el inicio de la IMU
+    usleep(3000000); // Esperar tres segundos por el balance de blancos de la camara y el inicio de la IMU, y el arduino
 
     if(!_bImuStarted) finishFlag = true; // errpr de apertura de IMU. Finalizar dataset
+    if(!_bEncoderStarted) finishFlag = true; // errpr de apertura de IMU. Finalizar dataset
+   
 
 
-    
 
-    
+
+
     for(;!finishFlag & (numImages<MAX_NUM_FRAMES);)
     {
         
@@ -522,23 +528,35 @@ static void * threadCam(void *arg)
             
         if(counter == divisor)
         {
+            counterEncoder++; // Divisor del encoder, ya que se muestrea 10 veces mas lento que la imu y cam
+
             // Evaluar que hacer con la imagen tomada
+
+            if(initEncoder) // Comenzar muestreo sincrono de encoder, activado por disparo de camara
+            {
+                initEncoder = false;
+                driver.startDeviceSampling(); // comienza el muestreo de los encoders
+                counterEncoder = 0; // reinicio de contador
+                cout << "start Sampling encoder " <<endl;
+                timestamp_EncoderTemp = timestamp.getNanoSecs();
+                
+            }
+
             if(startFlag) // si se comienza el dataset
             {
                 
                 startFlag = false; // bajar bandera
                 _bWriteData = true; // comenzar a guardar datos de camera, imu
-                driver.startDeviceSampling(); // comienza el muestreo de los encoders
-                usleep(10000);
                 timer.start();
                 cout << "start Flag " <<endl;
 
             }
+
         
             if(_bWriteData) // si se a activado la escritura de datos
             {
                 numImages++;
-                counterEncoder++; // Divisor del encoder, ya que se muestrea 10 veces mas lento que la imu y cam
+                
                 if(!_bImageWrite) // Si no se ha escrito la imagen
                 {
                     // Existe un cuello de botella en la escritura de la sd de la imagen
@@ -588,6 +606,8 @@ static void * threadCam(void *arg)
                 {
                     counterEncoder = 0;
                     pthread_mutex_unlock(&threadMutex_get_Encoder_data);
+                    usleep (1000); // esperar un milisengudo para que esten disponibles las 10 medidas del encoder
+                    // ya que si el muestreo es totalmente sincrono se puede dejar de leer una medida
                     _bGetEncoderData = true; // get data del driver en otro thread
                     pthread_mutex_unlock(&threadMutex_get_Encoder_data);     
             
@@ -606,14 +626,19 @@ static void * threadCam(void *arg)
                 _bGetImuData = true; // get data del buffer de la imu en otro thread
                 pthread_mutex_unlock(&threadMutex_get_imu_data);
 
-              /*   if(counterEncoder == divisorEncoder)
+                if(counterEncoder == divisorEncoder)
                 {
                     counterEncoder = 0;
                     pthread_mutex_unlock(&threadMutex_get_Encoder_data);
+                    usleep (5000);
                     _bGetEncoderData = true; // get data del driver en otro thread
                     pthread_mutex_unlock(&threadMutex_get_Encoder_data);
+                    pthread_mutex_lock(&threadMutex_cout);
+                    cout << " Get encoder" <<endl;
+                    cout << "first time =" << timestamp.getNanoSecs()-timestamp_EncoderTemp <<endl;
+                    pthread_mutex_unlock(&threadMutex_cout);
             
-                } */
+                } 
             }
             
             
@@ -845,6 +870,10 @@ static void * threadDriver(void *arg)
         driver.openSerialDev("/dev/ttyUSB0", 38400);
     }
 
+    _bEncoderStarted = true;
+    pthread_mutex_lock(&threadMutex_cout);
+    cout << " Encoder started" <<endl;
+    pthread_mutex_unlock(&threadMutex_cout);
     for(;!_bStopDriver;)
 	{
 
@@ -859,7 +888,10 @@ static void * threadDriver(void *arg)
              _bGetEncoderData = false; // bajar bandera de grab encoder data 
              pthread_mutex_unlock(&threadMutex_get_Encoder_data);
 
-             driver.sendCommandGetBufferData();
+            driver.sendCommandGetBufferData();
+            pthread_mutex_lock(&threadMutex_cout);
+            cout << "size data recieved of Encoder buffer =" << driver.sizeDataPackage/4 <<endl; 
+            pthread_mutex_unlock(&threadMutex_cout);
 
 
             if(_bWriteData) // Si se ha activado la escritura de datos
@@ -916,9 +948,7 @@ static void * threadDriver(void *arg)
                        
             
                     }
-                    pthread_mutex_lock(&threadMutex_cout);
-                    cout << "size data recieved of Encoder buffer =" << driver.sizeDataPackage/4 <<endl; 
-                    pthread_mutex_unlock(&threadMutex_cout);
+
 
                     pthread_mutex_lock(&threadMutex_indexEncoder);
                     indexOfEncoder= indexOfEncoder + driver.sizeDataPackage/4-1; // Nuevo indice del buffer

@@ -356,7 +356,7 @@ void Driver::run()
         
     }
     
-    if(lastDriverDir != driverDir ||  lastDriverBearing != driverBearing|| 
+/*     if(lastDriverDir != driverDir ||  lastDriverBearing != driverBearing|| 
     lastDriverVel != driverVel ||
     lastYaw != yaw ||
     lastRoll != roll )
@@ -367,7 +367,7 @@ void Driver::run()
         << " yaw = " << yaw
         << " roll = " << roll
         <<endl;
-    }
+    } */
   
 
     lastDriverBearing = driverBearing;
