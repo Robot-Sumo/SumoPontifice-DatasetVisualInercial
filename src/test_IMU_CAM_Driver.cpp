@@ -976,7 +976,7 @@ static void * threadDriver(void *arg)
 
 
                     pthread_mutex_lock(&threadMutex_indexEncoder);
-                    indexOfEncoder= indexOfEncoder + driver.sizeDataPackage/4-1; // Nuevo indice del buffer
+                    indexOfEncoder= indexOfEncoder + 9; // Nuevo indice del buffer
                     pthread_mutex_unlock(&threadMutex_indexEncoder);
                     
                     pthread_mutex_lock(&threadMutex_Encoder_grabbed);
