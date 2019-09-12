@@ -516,24 +516,25 @@ static void * threadCam(void *arg)
         Camera.grab();
         counter++;
 
-        if(startFlag) // si se comienza el dataset
-        {
-            
-            startFlag = false; // bajar bandera
-            _bWriteData = true; // comenzar a guardar datos de camera, imu
-            driver.startDeviceSampling(); // comienza el muestreo de los encoders
-            timer.start();
-            cout << "start Flag " <<endl;
 
-        }
-        
 
 
             
         if(counter == divisor)
         {
             // Evaluar que hacer con la imagen tomada
-            
+            if(startFlag) // si se comienza el dataset
+            {
+                
+                startFlag = false; // bajar bandera
+                _bWriteData = true; // comenzar a guardar datos de camera, imu
+                driver.startDeviceSampling(); // comienza el muestreo de los encoders
+                usleep(10000);
+                timer.start();
+                cout << "start Flag " <<endl;
+
+            }
+        
             if(_bWriteData) // si se a activado la escritura de datos
             {
                 numImages++;
@@ -920,7 +921,7 @@ static void * threadDriver(void *arg)
                     pthread_mutex_unlock(&threadMutex_cout);
 
                     pthread_mutex_lock(&threadMutex_indexEncoder);
-                    indexOfEncoder= indexOfEncoder + driver.sizeDataPackage/4; // Nuevo indice del buffer
+                    indexOfEncoder= indexOfEncoder + driver.sizeDataPackage/4-1; // Nuevo indice del buffer
                     pthread_mutex_unlock(&threadMutex_indexEncoder);
                     
                     pthread_mutex_lock(&threadMutex_Encoder_grabbed);
