@@ -935,10 +935,13 @@ static void * threadDriver(void *arg)
 
                     // guardar datos de encoder en Buffer
                     // tiempo en que se tomó la primera medida del encoder respecto a la imagen
-                    timestamp_Encoder = timestamp_image[indexOfImage]-(driver.sizeDataPackage/4 -1)*samplePeriodEncoderNs;
+                    timestamp_Encoder = timestamp_image[indexOfImage]-(driver.sizeDataPackage/4  -1)*samplePeriodEncoderNs;
                     int j;
                     j= 0;
-                    for(int i = 0; i < driver.sizeDataPackage/4; i++)
+                    int complementMeasure = 0;
+
+
+                    for(int i = 0; i < 9; i++)
                     {
                         numEncoderMeasurements++;
                         dataEncoder[indexOfEncoder+i].rightWheel = driver.bufferData[j+1]+(driver.bufferData[j]<<8);; // rad/s
@@ -948,6 +951,28 @@ static void * threadDriver(void *arg)
                        
             
                     }
+
+                    // complementar datos en caso de desincronizacion
+                    if(driver.sizeDataPackage/4 == 10) 
+                    {
+                        dataEncoder[indexOfEncoder+9].rightWheel = driver.bufferData[j+1]+(driver.bufferData[j]<<8);; // rad/s
+                        dataEncoder[indexOfEncoder+9].leftWheel = driver.bufferData[j+3]+(driver.bufferData[j+2]<<8) ; // rad/s
+                        dataEncoder[indexOfEncoder+9].timestamp = timestamp_Encoder+9*samplePeriodEncoderNs;
+                    } 
+                    else if(driver.sizeDataPackage/4 < 10)
+                    {
+                        dataEncoder[indexOfEncoder+9].rightWheel =0;; // rad/s
+                        dataEncoder[indexOfEncoder+9].leftWheel = 0 ; // rad/s
+                        dataEncoder[indexOfEncoder+9].timestamp = timestamp_Encoder+9*samplePeriodEncoderNs;
+                    }
+                    else if(driver.sizeDataPackage/4 > 10)
+                    {
+                        dataEncoder[indexOfEncoder+9].rightWheel = driver.bufferData[j+1]+(driver.bufferData[j]<<8);; // rad/s
+                        dataEncoder[indexOfEncoder+9].leftWheel = driver.bufferData[j+3]+(driver.bufferData[j+2]<<8) ; // rad/s
+                        dataEncoder[indexOfEncoder+9].timestamp = timestamp_Encoder+9*samplePeriodEncoderNs;
+                    }
+
+                 
 
 
                     pthread_mutex_lock(&threadMutex_indexEncoder);
