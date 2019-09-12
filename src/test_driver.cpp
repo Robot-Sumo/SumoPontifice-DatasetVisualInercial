@@ -21,8 +21,6 @@ int main(int argc, char** argv)
     
 
     // Ensure that it was found and that we can use it
-   
- 
 
      while (!driver.joystickFound)
     {

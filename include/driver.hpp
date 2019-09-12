@@ -52,6 +52,12 @@ using namespace std::chrono;
 
 
 
+struct DataPacketEncoder
+{
+    int rightWheel;
+    int leftWheel;
+    int64_t timestamp; //tiempo en el que se tomo la medida
+};
 
 enum robotStates
 {
@@ -159,10 +165,14 @@ class Driver
         void setExternalData(__CaptureData_Encoder_t * eData);
 
         // funcion que activa la bandera de goToGetBufferData en la maquina de estados
-        void getData();
-        
-       
+        // Diseñada para
+        void getEncoderData();
 
+        void finishDriver();
+        
+        void sendCommandGetBufferData(); // Funcion de muestreo (lectura de buffer de medidas)
+        int sizeDataPackage;
+        char bufferData [1000]; // Buffer de entrada serial
 
 
 
@@ -178,7 +188,7 @@ class Driver
         void setRoll();
         void setCommandPWM();
         void setCommandEncoderSampling();
-        void sendCommandGetBufferData(); // Funcion de muestreo (lectura de buffer de medidas)
+        
         void setCommandSampleFrecuency();
         
         void setCommandResetRobot();
@@ -235,8 +245,7 @@ class Driver
         static bool goToGetBufferData;
         static bool startSampling;
         static bool finishSampling;
-        char bufferData [1000]; // Buffer de entrada serial
-        int sizeDataPackage;
+
         int dataEncoderLeft;
         int dataEncoderRight;
         double currentTimeSeconds;

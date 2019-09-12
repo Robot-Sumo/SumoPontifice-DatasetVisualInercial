@@ -85,7 +85,7 @@ bool _bImuGrabbed= false;
 bool _bImageWrite= true;
 bool _bImuWrite= true;
 bool _bBottleneck= false;
-unsigned short iSampleRate = 100;
+unsigned short iSampleRate = 200;
 raspicam::RaspiCam Camera;
 
 std::ofstream outputFilecsv; // archivo de salida IMU

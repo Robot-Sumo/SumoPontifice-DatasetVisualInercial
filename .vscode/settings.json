@@ -1,6 +1,10 @@
 {
     "files.associations": {
         "iostream": "cpp",
-        "fstream": "cpp"
+        "fstream": "cpp",
+        "*.ipp": "cpp",
+        "functional": "cpp",
+        "istream": "cpp",
+        "tuple": "cpp"
     }
 }

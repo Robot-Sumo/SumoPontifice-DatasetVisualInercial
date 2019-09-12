@@ -97,7 +97,7 @@ void Driver::startDeviceSampling()
 }
 
 
-void Driver::getData()
+void Driver::getEncoderData()
 {
    goToGetBufferData = true; 
 }
@@ -264,9 +264,9 @@ void Driver::decodeJoystickButton(JoystickEvent event)
                         {
                              if(!externalSourceSampling) // si la fuente de muestreo es interna
                             {
-                                setCommandResetRobot();
+                               
                                 alarm(0); // cancelar alarma
-                                cout << "Sampling finished" << endl;
+                                finishDriver();
                                 outputFilecsv.close();
                             }
                             else // fuente externa
@@ -356,8 +356,6 @@ void Driver::run()
         
     }
     
-
-
     if(lastDriverDir != driverDir ||  lastDriverBearing != driverBearing|| 
     lastDriverVel != driverVel ||
     lastYaw != yaw ||
@@ -726,11 +724,15 @@ void Driver::sendCommandGetBufferData()
 
     sizeDataPackage = read (serialPort, bufferData, sizeof bufferData);  // read up to 100 characters if ready to read
     
-    cout << "measurements recieved = " << sizeDataPackage/4 <<endl;
+    
 
     if(!externalSourceSampling)
     {
+        cout << "measurements recieved = " << sizeDataPackage/4 <<endl;
         dataPackage2File();
+    }
+    else{
+        // do nothing
     }
 
     
@@ -799,4 +801,12 @@ void Driver::closeSerialDev()
 void Driver::closeJoystickDev()
 {
     joystick.closeDevice();
+}
+
+
+
+void Driver::finishDriver()
+{
+    setCommandResetRobot();
+    cout << "Sampling finished" << endl;
 }
