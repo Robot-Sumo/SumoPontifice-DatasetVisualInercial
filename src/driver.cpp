@@ -376,7 +376,6 @@ void Driver::run()
     lastYaw = yaw;
     lastRoll = roll;
   
-    usleep(5000);
 
 }
 

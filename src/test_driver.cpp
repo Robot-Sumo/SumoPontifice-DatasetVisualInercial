@@ -42,6 +42,7 @@ int main(int argc, char** argv)
     while (true)
     {
         driver.run();
+        usleep(5000);
     }
     
   

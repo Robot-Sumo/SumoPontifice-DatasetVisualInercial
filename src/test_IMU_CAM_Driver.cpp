@@ -513,7 +513,7 @@ static void * threadCam(void *arg)
    
 
 
-
+    int getEncoderCounter = 0;
 
 
     for(;(numImages<MAX_NUM_FRAMES);)
@@ -529,7 +529,11 @@ static void * threadCam(void *arg)
         if(counter == divisor)
         {
             counterEncoder++; // Divisor del encoder, ya que se muestrea 10 veces mas lento que la imu y cam
-            if (finishFlag ) break;
+            if(counterEncoder == divisorEncoder)
+            {
+                if (finishFlag ) break;
+            }
+            
             // Evaluar que hacer con la imagen tomada
 
             if(initEncoder) // Comenzar muestreo sincrono de encoder, activado por disparo de camara
@@ -606,9 +610,10 @@ static void * threadCam(void *arg)
                 {
                     counterEncoder = 0;
                     pthread_mutex_unlock(&threadMutex_get_Encoder_data);
-                    usleep (1000); // esperar un milisengudo para que esten disponibles las 10 medidas del encoder
+                    //usleep (1000); // esperar un milisengudo para que esten disponibles las 10 medidas del encoder
                     // ya que si el muestreo es totalmente sincrono se puede dejar de leer una medida
                     _bGetEncoderData = true; // get data del driver en otro thread
+                    getEncoderCounter++;
                     pthread_mutex_unlock(&threadMutex_get_Encoder_data);     
             
                 }
@@ -630,13 +635,13 @@ static void * threadCam(void *arg)
                 {
                     counterEncoder = 0;
                     pthread_mutex_unlock(&threadMutex_get_Encoder_data);
-                    usleep (5000);
+                    //usleep (5000);
                     _bGetEncoderData = true; // get data del driver en otro thread
                     pthread_mutex_unlock(&threadMutex_get_Encoder_data);
-                    pthread_mutex_lock(&threadMutex_cout);
+/*                     pthread_mutex_lock(&threadMutex_cout);
                     cout << " Get encoder" <<endl;
                     cout << "first time =" << timestamp.getNanoSecs()-timestamp_EncoderTemp <<endl;
-                    pthread_mutex_unlock(&threadMutex_cout);
+                    pthread_mutex_unlock(&threadMutex_cout); */
             
                 } 
             }
@@ -656,6 +661,7 @@ static void * threadCam(void *arg)
     
     cerr<< timer.getSecs()<< " seconds for "<< numImages<< "  frames : FPS " << ( ( float ) ( numImages ) / timer.getSecs() ) <<endl;
     cout << "Num images = " << numImages << endl;
+    cout << "getencodercounter " << getEncoderCounter <<endl;
     Camera.release();
     _bStop = true; // detener hilo de IMU
     _bStopDriver = true; // detener hilo del driver
@@ -679,7 +685,10 @@ static void * threadWriteDisk(void *arg)
     bool _bStopWriteThread = false;
     for(;!_bStopWriteThread;)
 	{
-		while(!_bStop && !_bImuGrabbed && !_bImageGrabbed && !_bEncoderGrabbed ); // Si se obtiene una imagen o datos de la imu sale
+		while(!_bStop && !_bImuGrabbed && !_bImageGrabbed && !_bEncoderGrabbed )
+        {
+            usleep(10000); 
+        }; // Si se obtiene una imagen o datos de la imu, o del encoder, atender las solicitudes de escritura
         int64_t timestampHere = timestamp.getNanoSecs();
     
         if (_bImuGrabbed) // bajar banderas 
@@ -719,9 +728,8 @@ static void * threadWriteDisk(void *arg)
                 fn<<"/home/pi/outputImages/"<< timestamp_image[i]<<".ppm"; 
                 if(!_bBottleneck) saveImage ( fn.str(), dataImage [i], format, width, height ,size );
                 else break;
-                pthread_mutex_lock(&threadMutex_indexImage);
                 index = indexOfImage;
-                pthread_mutex_unlock(&threadMutex_indexImage);
+
 
             }
 
@@ -758,9 +766,7 @@ static void * threadWriteDisk(void *arg)
                     <<std::endl;
                 }
                 else break;
-                pthread_mutex_lock(&threadMutex_indexImu);
                 index = indexOfImu;
-                pthread_mutex_unlock(&threadMutex_indexImu);
             }
             pthread_mutex_lock(&threadMutex_imu_grabbed);
                 _bImuGrabbed = false;
@@ -793,9 +799,8 @@ static void * threadWriteDisk(void *arg)
                     <<std::endl;
                 }
                 else break;
-                pthread_mutex_lock(&threadMutex_indexEncoder);
                 index = indexOfEncoder;
-                pthread_mutex_unlock(&threadMutex_indexEncoder);
+
             }
 
             pthread_mutex_lock(&threadMutex_Encoder_grabbed);
@@ -897,9 +902,9 @@ static void * threadDriver(void *arg)
              pthread_mutex_unlock(&threadMutex_get_Encoder_data);
 
             driver.sendCommandGetBufferData();
-            pthread_mutex_lock(&threadMutex_cout);
+/*             pthread_mutex_lock(&threadMutex_cout);
             cout << "size data recieved of Encoder buffer =" << driver.sizeDataPackage/4 <<endl; 
-            pthread_mutex_unlock(&threadMutex_cout);
+            pthread_mutex_unlock(&threadMutex_cout); */
 
 
             if(_bWriteData) // Si se ha activado la escritura de datos
@@ -922,9 +927,9 @@ static void * threadDriver(void *arg)
                         }
                         else
                         {
-                        pthread_mutex_lock(&threadMutex_cout);
+/*                         pthread_mutex_lock(&threadMutex_cout);
                         cout << "index buffer Encoder =" << indexOfEncoder<< ", Encoder measure = " << numEncoderMeasurements <<endl; 
-                        pthread_mutex_unlock(&threadMutex_cout);
+                        pthread_mutex_unlock(&threadMutex_cout); */
                         }
                         
                         
@@ -961,6 +966,7 @@ static void * threadDriver(void *arg)
                     }
 
                     // complementar datos en caso de desincronizacion
+                    numEncoderMeasurements++;
                     if(driver.sizeDataPackage/4 == 10) 
                     {
                         dataEncoder[indexOfEncoder+9].rightWheel = driver.bufferData[j+1]+(driver.bufferData[j]<<8);; // rad/s
@@ -998,8 +1004,10 @@ static void * threadDriver(void *arg)
         
     }
     pthread_mutex_lock(&threadMutex_cout);
-    cout << "Driver finished"<<endl; 
+    cout << "Numero de medidas del encoder = " << numEncoderMeasurements <<endl;
+    cout << "Numero de overflows del encoder = " << numOverflows <<endl;
     pthread_mutex_unlock(&threadMutex_cout);
+
     driver.finishDriver();
     driver.closeSerialDev();
     driver.closeJoystickDev();
