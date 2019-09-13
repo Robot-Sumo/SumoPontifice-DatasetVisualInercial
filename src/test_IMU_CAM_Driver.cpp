@@ -516,7 +516,7 @@ static void * threadCam(void *arg)
 
 
 
-    for(;!finishFlag & (numImages<MAX_NUM_FRAMES);)
+    for(;(numImages<MAX_NUM_FRAMES);)
     {
         
         Camera.grab();
@@ -529,7 +529,7 @@ static void * threadCam(void *arg)
         if(counter == divisor)
         {
             counterEncoder++; // Divisor del encoder, ya que se muestrea 10 veces mas lento que la imu y cam
-
+            if (finishFlag ) break;
             // Evaluar que hacer con la imagen tomada
 
             if(initEncoder) // Comenzar muestreo sincrono de encoder, activado por disparo de camara
@@ -675,152 +675,160 @@ static void * threadWriteDisk(void *arg)
     int numImuWritten= 0;
     int numEncoderWritten= 0;
     int numImagesWritten= 0;
-    for(;!_bStop;)
+
+    bool _bStopWriteThread = false;
+    for(;!_bStopWriteThread;)
 	{
-		while(!_bStop && !_bImuGrabbed && !_bImageGrabbed); // Si se obtiene una imagen o datos de la imu sale
+		while(!_bStop && !_bImuGrabbed && !_bImageGrabbed && !_bEncoderGrabbed ); // Si se obtiene una imagen o datos de la imu sale
         int64_t timestampHere = timestamp.getNanoSecs();
+    
+        if (_bImuGrabbed) // bajar banderas 
+        {
+                pthread_mutex_lock(&threadMutex_imu_write);
+                _bImuWrite = false; // aun no se han escrito las imagenes
+                pthread_mutex_unlock(&threadMutex_imu_write);
+        }
         
-        if(!_bStop)
+        if (_bEncoderGrabbed) // bajar banderas 
+        {
+                pthread_mutex_lock(&threadMutex_Encoder_write);
+                _bEncoderWrite = false; // aun no se han escrito las imagenes
+                pthread_mutex_unlock(&threadMutex_Encoder_write);
+        }
+
+        if (_bImageGrabbed) // escribir imagenes en disco
         {
             
-            if (_bImuGrabbed) // bajar banderas 
-            {
-                  pthread_mutex_lock(&threadMutex_imu_write);
-                 _bImuWrite = false; // aun no se han escrito las imagenes
-                 pthread_mutex_unlock(&threadMutex_imu_write);
-            }
+                pthread_mutex_lock(&threadMutex_image_write);
+                _bImageWrite = false; // aun no se han escrito las imagenes
+                pthread_mutex_unlock(&threadMutex_image_write);
             
-            if (_bEncoderGrabbed) // bajar banderas 
-            {
-                  pthread_mutex_lock(&threadMutex_Encoder_write);
-                 _bEncoderWrite = false; // aun no se han escrito las imagenes
-                 pthread_mutex_unlock(&threadMutex_Encoder_write);
-            }
-
-            if (_bImageGrabbed) // escribir imagenes en disco
-            {
-                
-                 pthread_mutex_lock(&threadMutex_image_write);
-                 _bImageWrite = false; // aun no se han escrito las imagenes
-                 pthread_mutex_unlock(&threadMutex_image_write);
-                
-            }
-        
-
-            if (_bImageGrabbed) // escribir imagenes en disco
-            {
-            
-                pthread_mutex_lock(&threadMutex_indexImage);
-                int index = indexOfImage;
-                pthread_mutex_unlock(&threadMutex_indexImage);
-                
-                for(int i = 0; i<= index; i++) {
-                    numImagesWritten++;
-                    std::stringstream fn;
-                    fn<<"/home/pi/outputImages/"<< timestamp_image[i]<<".ppm"; 
-                    if(!_bBottleneck) saveImage ( fn.str(), dataImage [i], format, width, height ,size );
-                    else break;
-                    pthread_mutex_lock(&threadMutex_indexImage);
-                    index = indexOfImage;
-                    pthread_mutex_unlock(&threadMutex_indexImage);
-
-                }
-
-                pthread_mutex_lock(&threadMutex_image_grabbed);
-                 _bImageGrabbed = false;
-                 pthread_mutex_unlock(&threadMutex_image_grabbed);
-
-                 pthread_mutex_lock(&threadMutex_image_write);
-                 _bImageWrite = true; // se escribieron las imagenes en disco
-                 pthread_mutex_unlock(&threadMutex_image_write);
-               
-
-            }
-    
-            if (_bImuGrabbed) // escribir medidas de imu en disco
-            {
-                
-
-                pthread_mutex_lock(&threadMutex_indexImu);
-                int index = indexOfImu;
-                pthread_mutex_unlock(&threadMutex_indexImu);
-                for(int i = 0; i<= index; i++) {
-                    
-                    if(!_bBottleneck)
-                    {
-                        numImuWritten++;
-                        outputFileImucsv <<  dataImu[i].timestamp << "," // indice de tiempo
-                        << dataImu[i].dataGyro_x <<  "," 
-                        << dataImu[i].dataGyro_y <<"," // rad/s
-                        << dataImu[i].dataGyro_z <<","
-                        << dataImu[i].dataAccel_x<<","
-                        << dataImu[i].dataAccel_y<<"," // m/s2
-                        << dataImu[i].dataAccel_z
-                        <<std::endl;
-                    }
-                    else break;
-                    pthread_mutex_lock(&threadMutex_indexImu);
-                    index = indexOfImu;
-                    pthread_mutex_unlock(&threadMutex_indexImu);
-                }
-                pthread_mutex_lock(&threadMutex_imu_grabbed);
-                 _bImuGrabbed = false;
-                 pthread_mutex_unlock(&threadMutex_imu_grabbed);
-
-                          
-                pthread_mutex_lock(&threadMutex_imu_write);
-                _bImuWrite = true; // se escribieron las medidas de la imu en disco
-                pthread_mutex_unlock(&threadMutex_imu_write);
-
-
-            }
-
-
-            if (_bEncoderGrabbed) // escribir medidas de encoder en disco
-            {
-                
-
-                pthread_mutex_lock(&threadMutex_indexEncoder);
-                int index = indexOfEncoder;
-                pthread_mutex_unlock(&threadMutex_indexEncoder);
-                for(int i = 0; i<= index; i++) {
-                    
-                    if(!_bBottleneck)
-                    {
-                        numEncoderWritten++;
-                        outputFileEncodercsv <<  dataEncoder[i].timestamp << "," // indice de tiempo
-                        << dataEncoder[i].leftWheel <<  "," 
-                        << dataEncoder[i].rightWheel 
-                        <<std::endl;
-                    }
-                    else break;
-                    pthread_mutex_lock(&threadMutex_indexEncoder);
-                    index = indexOfEncoder;
-                    pthread_mutex_unlock(&threadMutex_indexEncoder);
-                }
-
-                pthread_mutex_lock(&threadMutex_Encoder_grabbed);
-                 _bEncoderGrabbed = false; // bajar bandera
-                 pthread_mutex_unlock(&threadMutex_Encoder_grabbed);
-
-                          
-                pthread_mutex_lock(&threadMutex_Encoder_write);
-                _bEncoderWrite = true; // se escribieron las medidas de la imu en disco
-                pthread_mutex_unlock(&threadMutex_Encoder_write);
-
-
-            }
-
-             timePos = (timestamp.getNanoSecs()-timestampHere)/1000000.0 ;
-            if (timePos>maxTime)
-            {
-                maxTime = timePos;
-                pthread_mutex_lock(&threadMutex_cout);
-                cout << "max Time write on disk " << maxTime<< " ms"<<endl;
-                pthread_mutex_unlock(&threadMutex_cout);
-            }
-           
         }
+    
+
+        if (_bImageGrabbed) // escribir imagenes en disco
+        {
+        
+            pthread_mutex_lock(&threadMutex_indexImage);
+            int index = indexOfImage;
+            pthread_mutex_unlock(&threadMutex_indexImage);
+            
+            for(int i = 0; i<= index; i++) {
+                numImagesWritten++;
+                std::stringstream fn;
+                fn<<"/home/pi/outputImages/"<< timestamp_image[i]<<".ppm"; 
+                if(!_bBottleneck) saveImage ( fn.str(), dataImage [i], format, width, height ,size );
+                else break;
+                pthread_mutex_lock(&threadMutex_indexImage);
+                index = indexOfImage;
+                pthread_mutex_unlock(&threadMutex_indexImage);
+
+            }
+
+            pthread_mutex_lock(&threadMutex_image_grabbed);
+                _bImageGrabbed = false;
+                pthread_mutex_unlock(&threadMutex_image_grabbed);
+
+                pthread_mutex_lock(&threadMutex_image_write);
+                _bImageWrite = true; // se escribieron las imagenes en disco
+                pthread_mutex_unlock(&threadMutex_image_write);
+            
+
+        }
+
+        if (_bImuGrabbed) // escribir medidas de imu en disco
+        {
+            
+
+            pthread_mutex_lock(&threadMutex_indexImu);
+            int index = indexOfImu;
+            pthread_mutex_unlock(&threadMutex_indexImu);
+            for(int i = 0; i<= index; i++) {
+                
+                if(!_bBottleneck)
+                {
+                    numImuWritten++;
+                    outputFileImucsv <<  dataImu[i].timestamp << "," // indice de tiempo
+                    << dataImu[i].dataGyro_x <<  "," 
+                    << dataImu[i].dataGyro_y <<"," // rad/s
+                    << dataImu[i].dataGyro_z <<","
+                    << dataImu[i].dataAccel_x<<","
+                    << dataImu[i].dataAccel_y<<"," // m/s2
+                    << dataImu[i].dataAccel_z
+                    <<std::endl;
+                }
+                else break;
+                pthread_mutex_lock(&threadMutex_indexImu);
+                index = indexOfImu;
+                pthread_mutex_unlock(&threadMutex_indexImu);
+            }
+            pthread_mutex_lock(&threadMutex_imu_grabbed);
+                _bImuGrabbed = false;
+                pthread_mutex_unlock(&threadMutex_imu_grabbed);
+
+                        
+            pthread_mutex_lock(&threadMutex_imu_write);
+            _bImuWrite = true; // se escribieron las medidas de la imu en disco
+            pthread_mutex_unlock(&threadMutex_imu_write);
+
+
+        }
+
+
+        if (_bEncoderGrabbed) // escribir medidas de encoder en disco
+        {
+            
+
+            pthread_mutex_lock(&threadMutex_indexEncoder);
+            int index = indexOfEncoder;
+            pthread_mutex_unlock(&threadMutex_indexEncoder);
+            for(int i = 0; i<= index; i++) {
+                
+                if(!_bBottleneck)
+                {
+                    numEncoderWritten++;
+                    outputFileEncodercsv <<  dataEncoder[i].timestamp << "," // indice de tiempo
+                    << dataEncoder[i].leftWheel <<  "," 
+                    << dataEncoder[i].rightWheel 
+                    <<std::endl;
+                }
+                else break;
+                pthread_mutex_lock(&threadMutex_indexEncoder);
+                index = indexOfEncoder;
+                pthread_mutex_unlock(&threadMutex_indexEncoder);
+            }
+
+            pthread_mutex_lock(&threadMutex_Encoder_grabbed);
+                _bEncoderGrabbed = false; // bajar bandera
+                pthread_mutex_unlock(&threadMutex_Encoder_grabbed);
+
+                        
+            pthread_mutex_lock(&threadMutex_Encoder_write);
+            _bEncoderWrite = true; // se escribieron las medidas de la imu en disco
+            pthread_mutex_unlock(&threadMutex_Encoder_write);
+
+
+        }
+
+            timePos = (timestamp.getNanoSecs()-timestampHere)/1000000.0 ;
+        if (timePos>maxTime)
+        {
+            maxTime = timePos;
+            pthread_mutex_lock(&threadMutex_cout);
+            cout << "max Time write on disk " << maxTime<< " ms"<<endl;
+            pthread_mutex_unlock(&threadMutex_cout);
+        }
+
+
+        // Este thread se detendra cuando se reciba la señal de stop desde el imu de cam o ctrl+c
+        // y no haya ninguna solictud de escritura
+        if( _bStop && !_bImuGrabbed && !_bImageGrabbed && !_bEncoderGrabbed )
+        {
+            _bStopWriteThread = true;
+
+        }
+        
+        
       
         
   
