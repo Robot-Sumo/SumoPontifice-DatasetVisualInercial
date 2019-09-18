@@ -112,6 +112,10 @@ bool _bImageWrite= true;
 bool _bImuWrite= true;
 bool _bEncoderWrite= true;
 
+bool _bImageOver= false;
+bool _bImuOver= false;
+bool _bEncoderOver= false;
+
 bool _bBottleneck= false;
 bool _bHoldCamera= false;
 
@@ -124,12 +128,13 @@ raspicam::RaspiCam Camera;
 
 
 unsigned char *dataImage[sizeOfImageBuffer]; //  apuntador a la imagen actual
-int indexOfImage= 0;
+int indexOfImage= 0; // indice del buffer de imagen: Señala la ubicación de la medida más reciente
 
 
 
 Timestamp timestamp; // timestamp en nanoseconds;
 int64_t timestamp_image[sizeOfImageBuffer];
+int64_t last_timestamp_image[10]; // ultimas 10 timestamps
 int64_t timestamp_imu;
 int64_t timestamp_Encoder;
 
@@ -397,6 +402,7 @@ static void * threadImu(void *arg)
                 {
                     if(!_bImuWrite) // Si no se han escrito los datos de la imu anteriores
                     {
+                        _bImuOver = true;
                         // Existe un cuello de botella en la escritura de la sd de las medidas
                         numOverflows++;
                         pthread_mutex_lock(&threadMutex_indexImu);
@@ -422,6 +428,7 @@ static void * threadImu(void *arg)
                     }
                     else
                     {
+                        _bImuOver = false;
                         pthread_mutex_lock(&threadMutex_imu_write);
                         _bImuWrite = false; // bajar banderas
                         pthread_mutex_unlock(&threadMutex_imu_write);
@@ -469,6 +476,27 @@ static void * threadImu(void *arg)
         }
   
 	}
+        // Si se finalizo el sampling pero hay un cuello de botella, atender
+    while(_bImuOver)
+    {
+        if(!_bImuWrite) // Si no se han escrito los datos de la imu anteriores
+        {
+            pthread_mutex_lock(&threadMutex_Encoder_grabbed);
+            _bImuGrabbed = true;             
+            pthread_mutex_unlock(&threadMutex_Encoder_grabbed);
+            usleep(1000);
+        }
+        else{ // se escribieron los datos
+            _bImuOver = false;
+
+            pthread_mutex_lock(&threadMutex_indexImu);
+            indexOfImu = 0; // Nuevo indice del buffer
+            pthread_mutex_unlock(&threadMutex_indexImu);
+
+        }
+
+    }
+                        
     pthread_mutex_lock(&threadMutex_cout);
     cout << "Numero de medidas de la imu = " << numImuMeasurements <<endl;
     cout << "Numero de overflows de la imu = " << numOverflows <<endl;
@@ -556,6 +584,7 @@ static void * threadCam(void *arg)
 
             }
 
+
         
             if(_bWriteData) // si se a activado la escritura de datos
             {
@@ -563,6 +592,7 @@ static void * threadCam(void *arg)
                 
                 if(!_bImageWrite) // Si no se ha escrito la imagen
                 {
+                    _bImageOver = true;
                     // Existe un cuello de botella en la escritura de la sd de la imagen
                     pthread_mutex_lock(&threadMutex_indexImage);
                     indexOfImage = indexOfImage+1;
@@ -587,6 +617,7 @@ static void * threadCam(void *arg)
                 }
                 else
                 {
+                    _bImageOver = false;
                     pthread_mutex_lock(&threadMutex_image_write);
                     _bImageWrite = false; // bajar banderas
                     pthread_mutex_unlock(&threadMutex_image_write); 
@@ -599,6 +630,7 @@ static void * threadCam(void *arg)
                 
                 pthread_mutex_lock(&threadMutex_indexImage);
                 timestamp_image[indexOfImage] = timestamp.getNanoSecs();
+                last_timestamp_image[counterEncoder-1] = timestamp_image[indexOfImage] ; // Guardar los ultimos datos de imagen
                 Camera.retrieve ( dataImage[indexOfImage] );
                 pthread_mutex_unlock(&threadMutex_indexImage);
 
@@ -626,7 +658,7 @@ static void * threadCam(void *arg)
             {
                 // Si no se ha activado de la escritura de datos
                 // mantenerse leyendo el buffer de la imu y del encoder
-
+                last_timestamp_image[counterEncoder-1] = timestamp.getNanoSecs() ; // Guardar los ultimos datos de imagen
                 pthread_mutex_lock(&threadMutex_get_imu_data);
                 _bGetImuData = true; // get data del buffer de la imu en otro thread
                 pthread_mutex_unlock(&threadMutex_get_imu_data);
@@ -658,6 +690,25 @@ static void * threadCam(void *arg)
         
     };//stops when nFrames captured or at infinity lpif nFramesCaptured<0
     timer.end();
+
+    while(_bImageOver)
+    {
+        if(!_bImageWrite) // Si no se han escrito los datos de la imu anteriores
+        {
+            pthread_mutex_lock(&threadMutex_image_grabbed);
+            _bImageGrabbed = true;             
+            pthread_mutex_unlock(&threadMutex_image_grabbed);
+            usleep(1000);
+        }
+        else{ // se escribieron los datos
+            _bImageOver = false;
+         
+            pthread_mutex_lock(&threadMutex_indexImage);
+            indexOfImage= 0; // se escribieron las medidas en disco. reiniciar buffer
+            pthread_mutex_unlock(&threadMutex_indexImage);
+        }
+
+    }
     
     cerr<< timer.getSecs()<< " seconds for "<< numImages<< "  frames : FPS " << ( ( float ) ( numImages ) / timer.getSecs() ) <<endl;
     cout << "Num images = " << numImages << endl;
@@ -682,6 +733,7 @@ static void * threadWriteDisk(void *arg)
     int numEncoderWritten= 0;
     int numImagesWritten= 0;
 
+
     bool _bStopWriteThread = false;
     for(;!_bStopWriteThread;)
 	{
@@ -690,7 +742,7 @@ static void * threadWriteDisk(void *arg)
             usleep(10000); 
         }; // Si se obtiene una imagen o datos de la imu, o del encoder, atender las solicitudes de escritura
         int64_t timestampHere = timestamp.getNanoSecs();
-    
+
         if (_bImuGrabbed) // bajar banderas 
         {
                 pthread_mutex_lock(&threadMutex_imu_write);
@@ -827,6 +879,19 @@ static void * threadWriteDisk(void *arg)
 
         // Este thread se detendra cuando se reciba la señal de stop desde el imu de cam o ctrl+c
         // y no haya ninguna solictud de escritura
+        if(_bStop)
+        {    
+            
+            usleep(40000); // esperar por si se produce una nueva petición
+            pthread_mutex_lock(&threadMutex_cout);
+            cout << "_bImuOver " << _bImuOver <<endl;
+            cout << "_bImageOver " << _bImageOver <<endl;
+            cout << "_bEncoderOver " << _bEncoderOver <<endl;
+            cout << "indexOfImu" << indexOfImu <<endl;
+            cout << "IndexOfImage " << indexOfImage<<endl;
+            cout << "IndexOfEncoder " << indexOfEncoder <<endl;
+            pthread_mutex_unlock(&threadMutex_cout);
+        }
         if( _bStop && !_bImuGrabbed && !_bImageGrabbed && !_bEncoderGrabbed )
         {
             _bStopWriteThread = true;
@@ -859,7 +924,7 @@ static void * threadDriver(void *arg)
    
     int numOverflows = 0; // Numero de posibles overflows del driver
     int numEncoderMeasurements = 0; 
-    int64_t samplePeriodEncoderNs = 1000000000/iSampleRate*10;
+    int64_t samplePeriodEncoderNs = (1000000000/iSampleRate)*10;
     usleep(1000); // esperar un segundo
     driver.openJoystickDev("/dev/input/js0");
     driver.setSourceSampling(true); // La funcion que habilita el muestreo estará fuera del hilo
@@ -912,6 +977,7 @@ static void * threadDriver(void *arg)
                     if(!_bEncoderWrite) // Si no se han escrito los datos de la imu anteriores
                     {
                         // Existe un cuello de botella en la escritura de la sd de las medidas
+                        _bEncoderOver = true;
                         numOverflows++;
                         pthread_mutex_lock(&threadMutex_indexEncoder);
                         indexOfEncoder = indexOfEncoder+1;
@@ -936,6 +1002,7 @@ static void * threadDriver(void *arg)
                     }
                     else
                     {
+                        _bEncoderOver = false;
                         pthread_mutex_lock(&threadMutex_Encoder_write);
                         _bEncoderWrite = false; // bajar banderas
                         pthread_mutex_unlock(&threadMutex_Encoder_write);
@@ -948,7 +1015,6 @@ static void * threadDriver(void *arg)
 
                     // guardar datos de encoder en Buffer
                     // tiempo en que se tomó la primera medida del encoder respecto a la imagen
-                    timestamp_Encoder = timestamp_image[indexOfImage]-(driver.sizeDataPackage/4  -1)*samplePeriodEncoderNs;
                     int j;
                     j= 0;
                     int complementMeasure = 0;
@@ -959,7 +1025,7 @@ static void * threadDriver(void *arg)
                         numEncoderMeasurements++;
                         dataEncoder[indexOfEncoder+i].rightWheel = driver.bufferData[j+1]+(driver.bufferData[j]<<8);; // rad/s
                         dataEncoder[indexOfEncoder+i].leftWheel = driver.bufferData[j+3]+(driver.bufferData[j+2]<<8) ; // rad/s
-                        dataEncoder[indexOfEncoder+i].timestamp = timestamp_Encoder+i*samplePeriodEncoderNs;
+                        dataEncoder[indexOfEncoder+i].timestamp = last_timestamp_image[i];
                         j = j+4;
                        
             
@@ -971,19 +1037,19 @@ static void * threadDriver(void *arg)
                     {
                         dataEncoder[indexOfEncoder+9].rightWheel = driver.bufferData[j+1]+(driver.bufferData[j]<<8);; // rad/s
                         dataEncoder[indexOfEncoder+9].leftWheel = driver.bufferData[j+3]+(driver.bufferData[j+2]<<8) ; // rad/s
-                        dataEncoder[indexOfEncoder+9].timestamp = timestamp_Encoder+9*samplePeriodEncoderNs;
+                        dataEncoder[indexOfEncoder+9].timestamp = last_timestamp_image[9];
                     } 
                     else if(driver.sizeDataPackage/4 < 10)
                     {
                         dataEncoder[indexOfEncoder+9].rightWheel =0;; // rad/s
                         dataEncoder[indexOfEncoder+9].leftWheel = 0 ; // rad/s
-                        dataEncoder[indexOfEncoder+9].timestamp = timestamp_Encoder+9*samplePeriodEncoderNs;
+                        dataEncoder[indexOfEncoder+9].timestamp = last_timestamp_image[9];
                     }
                     else if(driver.sizeDataPackage/4 > 10)
                     {
                         dataEncoder[indexOfEncoder+9].rightWheel = driver.bufferData[j+1]+(driver.bufferData[j]<<8);; // rad/s
                         dataEncoder[indexOfEncoder+9].leftWheel = driver.bufferData[j+3]+(driver.bufferData[j+2]<<8) ; // rad/s
-                        dataEncoder[indexOfEncoder+9].timestamp = timestamp_Encoder+9*samplePeriodEncoderNs;
+                        dataEncoder[indexOfEncoder+9].timestamp = last_timestamp_image[9];
                     }
 
                  
@@ -1003,14 +1069,37 @@ static void * threadDriver(void *arg)
         }
         
     }
+
+
+    driver.finishDriver();
+
+    // Si se finalizo el sampling pero hay un cuello de botella, atender
+    while(_bEncoderOver)
+    {
+        if(!_bEncoderWrite) // Si no se han escrito los datos de la imu anteriores
+        {
+            pthread_mutex_lock(&threadMutex_Encoder_grabbed);
+            _bEncoderGrabbed = true;             
+            pthread_mutex_unlock(&threadMutex_Encoder_grabbed);
+            usleep(1000);
+        }
+        else{ // se escribieron los datos
+            _bEncoderOver = false;
+         
+            pthread_mutex_lock(&threadMutex_indexEncoder);
+            indexOfEncoder = 0; // se escribieron las medidas en disco. reiniciar buffer
+            pthread_mutex_unlock(&threadMutex_indexEncoder);
+        }
+
+    }
+    driver.closeSerialDev();
+    driver.closeJoystickDev();
+
     pthread_mutex_lock(&threadMutex_cout);
     cout << "Numero de medidas del encoder = " << numEncoderMeasurements <<endl;
     cout << "Numero de overflows del encoder = " << numOverflows <<endl;
     pthread_mutex_unlock(&threadMutex_cout);
 
-    driver.finishDriver();
-    driver.closeSerialDev();
-    driver.closeJoystickDev();
     return NULL;
     
 }
@@ -1052,13 +1141,15 @@ int main ( int argc,char **argv ) {
 
 
     pthread_create(&h1, NULL, threadCam, NULL);
+    pthread_create(&h4, NULL, threadDriver, NULL);
     pthread_create(&h2, NULL, threadImu, NULL);
     pthread_create(&h3, NULL, threadWriteDisk, NULL);
-    pthread_create(&h4, NULL, threadDriver, NULL);
+
     pthread_join(h1, NULL);
+    pthread_join(h4, NULL);
     pthread_join(h2, NULL);
     pthread_join(h3, NULL);
-    pthread_join(h4, NULL);
+
 
 
 
