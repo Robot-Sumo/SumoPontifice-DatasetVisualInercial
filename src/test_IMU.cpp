@@ -316,7 +316,7 @@ int main( int argc, char * argv[] )
 	// Utiliza el buffer
 	// Existe un callback periodico que lee el buffer y
 	// guarda los datos. Luego imprime los datos guardados
-	__testpush2();
+	__test();
 
 	outputFilecsv.close();
 
